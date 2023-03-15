@@ -1,4 +1,3 @@
-package test;
 
 public class Example2 {
     public static void test1(Object x) {

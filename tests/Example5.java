@@ -1,4 +1,3 @@
-package test;
 
 public class Example5 {
     private static final String MESSAGE = "Hello, world!"; 

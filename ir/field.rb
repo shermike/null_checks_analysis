@@ -3,15 +3,19 @@
 class JavaField
   attr_accessor :name, :cls, :attributes, :type
 
-  def initialize(name, cls, attributes)
+  def initialize(name, cls, type, attributes)
     @name = name
     @cls = cls
-    @attributes = attributes[0..-2]
-    @type = attributes[-1]
+    @attributes = attributes
+    @type = type
   end
 
   def final?
     @attributes.include? 'final'
+  end
+
+  def static?
+    @attributes.include? 'static'
   end
 
   def to_s

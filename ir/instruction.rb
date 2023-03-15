@@ -100,6 +100,10 @@ class InvokeInstruction < Instruction
     super(pc, opcode, immediates, descr)
     @signature = signature
   end
+
+  def to_s
+    "#{super.to_s} ; #{@signature}"
+  end
 end
 
 class FieldInstruction < Instruction

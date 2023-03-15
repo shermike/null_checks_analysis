@@ -38,11 +38,12 @@ def run_test(filename)
   false_checks = []
 
   File.readlines(filename).each_with_index do |line, index|
-    true_checks << index + 2 if line.include? '// NEXTLINE: ALWAYS_TRUE_NULL_CHECK'
-    false_checks << index + 2 if line.include? '// NEXTLINE: ALWAYS_FALSE_NULL_CHECK'
+    line.strip!
+    true_checks << index + 2 if line.start_with? '// NEXTLINE: ALWAYS_TRUE_NULL_CHECK'
+    false_checks << index + 2 if line.start_with? '// NEXTLINE: ALWAYS_FALSE_NULL_CHECK'
   end
   basename = File.basename(filename, '.*')
-  classname = "#{Dir.tmpdir}/test/#{basename}.class"
+  classname = "#{Dir.tmpdir}/#{basename}.class"
 
   command("javac -d #{Dir.tmpdir} #{filename}")
 
@@ -62,8 +63,12 @@ def run_test(filename)
   true_lines.sort!
   false_lines.sort!
 
-  raise "FAILED TRUE CHECKS: expected lines: #{true_checks}, result lines: #{true_lines}" if true_checks != true_lines
-  raise "FAILED FALSE CHECKS: expected lines: #{false_checks}, result lines: #{false_lines}" if false_checks != false_lines
+  if true_checks != true_lines || false_checks != false_lines
+    puts "FAILED!"
+    puts "  ALWAYS TRUE LINES:  expected: #{true_checks}, result: #{true_lines}"
+    puts "  ALWAYS FALSE LINES: expected: #{false_checks}, result: #{false_lines}"
+    abort
+  end
 
   $files_count += 1
   $checks_count += true_lines.size + false_lines.size

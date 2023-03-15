@@ -62,7 +62,7 @@ class BasicBlock
     fsucc = false_succ ? ', f->bb.' + false_succ.id.to_s : ''
     succs = "[t->#{tsucc}#{fsucc}]"
     preds_str = " [preds: #{@preds.join(', ')}]" unless @preds.empty?
-    puts "  bb.#{@id}#{succs}#{preds_str}"
+    puts "  bb.#{@id}# {succs}#{preds_str}"
     @instructions.each(&:dump)
   end
 

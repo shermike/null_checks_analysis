@@ -16,7 +16,7 @@ class MethodSignature
   end
 
   def to_s
-    "Signature: type=#{@type}, name=#{@name}, params=#{@params}, attrs=#{@attrs}"
+    "type=#{@type}, name=#{@name}, params=#{@params}, attrs=#{@attrs}"
   end
 
   def inspect

@@ -1,4 +1,3 @@
-package test;
 
 public class Example3 {
     private final Object x;

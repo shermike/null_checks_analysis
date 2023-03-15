@@ -14,6 +14,8 @@ class SsaBuilder
     rpo(@method) do |bb|
       stack = []
 
+      @defs[bb] = {}
+
       unless bb.preds.empty?
         update_defs_from_preds(bb)
 
@@ -73,7 +75,7 @@ class SsaBuilder
 
   def update_defs_from_preds(bb)
     if bb.preds.size == 1
-      @defs[bb] = @defs[bb.preds[0]].clone
+      @defs[bb] = @defs[bb.preds[0]].clone unless @defs[bb].nil?
       raise "Block wasn't processed: bb.#{bb.preds[0]}" if @defs[bb].nil?
     elsif bb.preds.size > 1
       same_defs = bb.preds.map { |x| @defs[x].keys }.reduce(&:&)

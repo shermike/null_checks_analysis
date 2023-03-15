@@ -27,8 +27,9 @@ class NullCheckAnalysis
         when input_result != NON_DETERMINISTIC
           report(inst, input_result == ALWAYS_TRUE)
         when input.opcode == :phi
-          analyze_phi(inst)
-        when input.opcode == :getfield
+          res = analyze_phi(inst)
+          report(inst, res) if res != NON_DETERMINISTIC
+        when input.opcode == :getfield || input.opcode == :getstatic
           analyze_getfield(inst)
         when input.invoke?
           analyze_invoke(inst)
@@ -44,7 +45,7 @@ class NullCheckAnalysis
     case inst.opcode
     when :aconst_null
       return ALWAYS_FALSE
-    when :new
+    when :new, :anewarray, :multianewarray
       return ALWAYS_TRUE
     when :invokespecial
       return ALWAYS_TRUE if inst.signature.constructor?
@@ -55,19 +56,17 @@ class NullCheckAnalysis
   end
 
   # If input of the null-check is a phi instruction, then check all its inputs in case all of them have
-  # a same deterministic value.
+  # the same deterministic value.
   def analyze_phi(inst)
     phi = inst.inputs[0]
     values = []
     phi.inputs.each do |input|
       values << get_value_from_inst(input)
     end
-    return if values.empty?
-    if values.all? { |x| x == ALWAYS_TRUE }
-      report(inst, true)
-    elsif values.all? { |x| x == ALWAYS_FALSE }
-      report(inst, false)
-    end
+    return NON_DETERMINISTIC if values.empty?
+    return ALWAYS_TRUE if values.all? { |x| x == ALWAYS_TRUE }
+    return ALWAYS_FALSE if values.all? { |x| x == ALWAYS_FALSE }
+    NON_DETERMINISTIC
   end
 
   # If input of the check is a getfield instruction, then we can remove the chec if field is final.
@@ -77,8 +76,12 @@ class NullCheckAnalysis
     getfield = inst.inputs[0]
     return unless getfield.field.final?
     values = []
-    @method.cls.constructors.each do |ctor|
-      values << get_field_value_from_method(getfield.field, ctor)
+    if getfield.opcode == :getstatic
+      values << get_field_value_from_method(getfield.field, @method.cls.static_initializer, :putstatic) if @method.cls.static_initializer
+    else
+      @method.cls.constructors.each do |ctor|
+        values << get_field_value_from_method(getfield.field, ctor, :putfield)
+      end
     end
     return if values.empty?
     if values.all? { |x| x == ALWAYS_TRUE }
@@ -99,8 +102,11 @@ class NullCheckAnalysis
 
     values = get_return_value_from_method(callee)
     return if values.empty?
-    report(inst, true) if values.all?
-    report(inst, false) if values.none?
+    if values.all? { |x| x == ALWAYS_TRUE }
+      report(inst, true)
+    elsif values.all? { |x| x == ALWAYS_FALSE }
+      report(inst, false)
+    end
   end
 
   # Analyse the def instruction of the null-check. There are some patterns, when another uses of the def instruction
@@ -132,14 +138,14 @@ class NullCheckAnalysis
   end
 
   # For the given field, find the `putfield` instruction in the method.
-  # Return true if it is always not null, return false if it is always null.
-  def get_field_value_from_method(field, method)
+  def get_field_value_from_method(field, method, opcode)
     method.instructions.each do |inst|
-      if inst.opcode == :putfield && inst.field == field
+      if inst.opcode == opcode && inst.field == field
         input = inst.inputs[0]
         return ALWAYS_TRUE if input.opcode == :new
         return ALWAYS_TRUE if input.invoke? && input.signature.constructor?
         return ALWAYS_FALSE if input.opcode == :aconst_null
+        return analyze_phi(inst) if input.opcode == :phi
         return NON_DETERMINISTIC
       end
     end
@@ -152,8 +158,8 @@ class NullCheckAnalysis
     method.instructions.each do |inst|
       if inst.opcode == :areturn
         result = get_value_from_inst(inst.inputs[0])
-        return [] if result == NON_DETERMINISTIC
-        values << result == ALWAYS_TRUE
+        return [NON_DETERMINISTIC] if result == NON_DETERMINISTIC
+        values << result
       end
     end
     values
@@ -162,6 +168,10 @@ class NullCheckAnalysis
   # Report null-check redundancy.
   # If `value` is true, then the input for the null check is not null. Otherwise, it is null.
   def report(inst, value)
+    case value
+    when ALWAYS_TRUE; value = true
+    when ALWAYS_FALSE; value = false
+    end
     if inst.opcode == :ifnull
       result = !value
     elsif inst.opcode == :ifnonnull
@@ -175,7 +185,6 @@ class NullCheckAnalysis
     if result
       @true_lines << inst.line
       puts "Null check is always false: #{@method.cls.filename}:#{inst.line}" unless @quiet
-
     else
       @false_lines << inst.line
       puts "Null check is always true: #{@method.cls.filename}:#{inst.line}" unless @quiet

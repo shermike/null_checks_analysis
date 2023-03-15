@@ -11,8 +11,8 @@ class JavaMethod < JavaField
 
   PRIMITIVE_TYPES = %w(byte short int long float double char boolean)
 
-  def initialize(name, args, cls, attributes)
-    if attributes.size == 1
+  def initialize(name, args, cls, type, attributes)
+    if name == cls.name
       self.name = name
       self.cls = cls
       self.attributes = attributes
@@ -20,7 +20,7 @@ class JavaMethod < JavaField
       args = [@cls.name]
       @is_ctor = true
     else
-      super(name, cls, attributes)
+      super(name, cls, type, attributes)
       @is_ctor = false
       args.prepend(@cls.name) unless static?
     end
@@ -42,6 +42,10 @@ class JavaMethod < JavaField
 
   def static?
     @attributes.include? 'static'
+  end
+
+  def static_initializer?
+    @attributes.include? 'static_initializer'
   end
 
   def entry_bb

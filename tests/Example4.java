@@ -1,4 +1,3 @@
-package test;
 
 public class Example4 {
     public final Object foo() {

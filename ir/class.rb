@@ -18,6 +18,10 @@ class JavaClass
     @methods.select(&:constructor?)
   end
 
+  def static_initializer
+    @methods.find(&:static_initializer?)
+  end
+
   def find_method(name)
     @methods.find { |x| x.name == name }
   end

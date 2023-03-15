@@ -12,7 +12,8 @@ require 'tmpdir'
 # It uses straightforward parser, based on regexps, therefore it is quite fragile and should not be used in
 # the production code.
 class IrBuilderJavap
-  TYPE_MAP = {V: :T_VOID, C: :T_CHAR, B: :T_BYTE, I: :T_INT, J: :T_LONG, F: :T_FLOAT, D: :T_DOUBLE, L: :T_OBJECT}
+  TYPE_MAP = {Z: :T_INT, V: :T_VOID, C: :T_CHAR, B: :T_BYTE, I: :T_INT, J: :T_LONG, F: :T_FLOAT, D: :T_DOUBLE,
+              L: :T_OBJECT, '['.to_sym => :T_OBJECT}
 
   def initialize
     @class = nil
@@ -45,12 +46,12 @@ class IrBuilderJavap
         next
       end
       unless @class
-        class_name = /public class (.*) {/.match(line)
-        @class = JavaClass.new(class_name[1], filename) if class_name
+        class_name = /(public |private )?class ([^ ]*).*{/.match(line)
+        @class = JavaClass.new(class_name[2], filename) if class_name
         next
       end
-      case line
-      when /^  (public|private|protected)/
+      case
+      when line =~ /^  (public|private|protected|static|final)/ || line == "  #{@class.name}();"
         field = parse_declaration(line)
         if field.is_a? JavaMethod
           method = field
@@ -58,10 +59,10 @@ class IrBuilderJavap
         else
           @class.fields[field.name] = field
         end
-      when '    Code:'
+      when line == '    Code:'
         state = :CODE
         instructions = []
-      when '    LineNumberTable:'
+      when line == '    LineNumberTable:'
         state = :LINETABLE
         method.instructions = instructions
         instructions = nil
@@ -77,32 +78,38 @@ class IrBuilderJavap
         end
       end
     end
+    raise "No class found in '#{filename}'" if @class.nil?
     @class.methods.each(&:construct_cfg)
     @class.methods.each { |method| SsaBuilder.new(method).construct }
     @class
   end
 
   def parse_declaration(line)
+    if line == '  static {};'
+      return JavaMethod.new('__StaticBlock__', [], @class, nil, ['static', 'static_initializer'])
+    end
+
     return parse_method_decl(line) if line.include?('(')
     data = line.strip[0..-1].split
     name = data[-1].chomp(';')
     modifiers = data[0..-2]
-    JavaField.new(name, @class, modifiers)
+    JavaField.new(name, @class, modifiers[-1], modifiers)
   end
 
   def parse_method_decl(line)
-    m = /(.*) (.+)\((.*)\);/.match(line.strip)
-    modifiers = m[1].split
-    name = m[2]
-    args = m[3].split(', ')
-    JavaMethod.new(name, args, @class, modifiers)
+    m = /((.*) )?(.+)\((.*)\);/.match(line.strip)
+    raise "Invalid method declaration" if m.nil?
+    modifiers = m[2] ? m[2].split : []
+    name = m[3]
+    args = m[4].split(', ')
+    JavaMethod.new(name, args, @class, nil, modifiers)
   end
 
   def parse_comment(comment, opcode)
     comment.strip!
     if comment.start_with? 'Method'
       comment = comment[7..-1] # Remove 'Method '
-      m = /(.*):\((.*)\)(\w+)/.match(comment)
+      m = /(.*):\((.*)\)(.+)/.match(comment)
       raise "Method signature parse failed: #{comment}" unless m
       name = m[1]
       params = m[2]&.split(';')
@@ -120,11 +127,15 @@ class IrBuilderJavap
       params.prepend(cls) if opcode != :invokestatic
       return MethodSignature.new(return_type, cls, name, params, [])
     elsif comment.start_with? 'Field'
-      comment = comment[6..-1] # Remove 'Field '
-      name = comment.split(':')[0]
+      comment = comment[6..-1]
+      split = comment.chomp(';').split(':')
+      name = split[0]
       field = @class.fields[name]
-      raise 'Unknown field: #{name}' if field.nil?
-      return field
+      if field.nil?
+        field = JavaField.new(name, nil, split[1], [])
+        @class.fields[name] = field
+      end
+      field
     end
   end
 
@@ -151,6 +162,7 @@ class IrBuilderJavap
 
     return build_invoke(comment_tkn, pc, opcode, immediates, descr) if opcode.start_with? 'invoke'
     return build_field(comment_tkn, pc, opcode, immediates, descr) if opcode == :getfield || opcode == :putfield
+    return build_field(comment_tkn, pc, opcode, immediates, descr) if opcode == :getstatic || opcode == :putstatic
     Instruction.new(pc, opcode, immediates, descr)
   end
 
